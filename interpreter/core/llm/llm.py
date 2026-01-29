@@ -288,6 +288,9 @@ Continuing...
             "stream": True,
         }
 
+        if model.startswith("ollama/"):
+            params["extra_headers"] = {"ngrok-skip-browser-warning": "69420"}
+
         # Optional inputs
         if self.api_key:
             params["api_key"] = self.api_key
@@ -353,7 +356,10 @@ Continuing...
             names = []
             try:
                 # List out all downloaded ollama models. Will fail if ollama isn't installed
-                response = requests.get(f"{api_base}/api/tags")
+                response = requests.get(
+                    f"{api_base}/api/tags",
+                    headers={"ngrok-skip-browser-warning": "69420"},
+                )
                 if response.ok:
                     data = response.json()
                     names = [
@@ -372,12 +378,18 @@ Continuing...
             # Download model if not already installed
             if model_name not in names:
                 self.interpreter.display_message(f"\nDownloading {model_name}...\n")
-                requests.post(f"{api_base}/api/pull", json={"name": model_name})
+                requests.post(
+                    f"{api_base}/api/pull",
+                    json={"name": model_name},
+                    headers={"ngrok-skip-browser-warning": "69420"},
+                )
 
             # Get context window if not set
             if self.context_window == None:
                 response = requests.post(
-                    f"{api_base}/api/show", json={"name": model_name}
+                    f"{api_base}/api/show",
+                    json={"name": model_name},
+                    headers={"ngrok-skip-browser-warning": "69420"},
                 )
                 model_info = response.json().get("model_info", {})
                 context_length = None
