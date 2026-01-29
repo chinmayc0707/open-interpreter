@@ -1,5 +1,6 @@
 # Thank you Ty Fiero for making this!
 
+import json
 import os
 import platform
 import subprocess
@@ -235,20 +236,32 @@ def local_setup(interpreter, provider=None, model=None):
         interpreter.llm.api_key = "dummy"
 
     elif selected_model == "Ollama":
+        # Ask for the Ollama URL
+        questions = [
+            inquirer.Text(
+                "url", message="Enter the Ollama URL", default="http://localhost:11434"
+            ),
+        ]
+        answers = inquirer.prompt(questions)
+        if answers == None:
+            sys.exit(0)
+        ollama_url = answers["url"].strip().rstrip("/")
+
         try:
-            # List out all downloaded ollama models. Will fail if ollama isn't installed
-            result = subprocess.run(
-                ["ollama", "list"], capture_output=True, text=True, check=True
+            # List out all downloaded ollama models using the API
+            response = requests.get(
+                f"{ollama_url}/api/tags",
+                headers={"ngrok-skip-browser-warning": "69420"},
             )
-            lines = result.stdout.split("\n")
+            response.raise_for_status()
+            data = response.json()
+            models_data = data.get("models", [])
 
             names = [
-                line.split()[0].replace(":latest", "")
-                for line in lines
-                if line.strip()
-                and not line.startswith("failed")
-                and not line.startswith("NAME")
-            ]  # Extract names, trim out ":latest", skip header
+                model["name"].replace(":latest", "")
+                for model in models_data
+                if "name" in model
+            ]
 
             # Models whose name contain one of these keywords will be moved to the front of the list
             priority_models = ["llama3", "codestral"]
@@ -289,7 +302,25 @@ def local_setup(interpreter, provider=None, model=None):
             if "↓ Download " in selected_name:
                 model = selected_name.split(" ")[-1]
                 interpreter.display_message(f"\nDownloading {model}...\n")
-                subprocess.run(["ollama", "pull", model], check=True)
+
+                # Stream the download
+                response = requests.post(
+                    f"{ollama_url}/api/pull",
+                    json={"name": model},
+                    stream=True,
+                    headers={"ngrok-skip-browser-warning": "69420"},
+                )
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            status = json.loads(line)
+                            if "status" in status:
+                                print(status["status"], end="\r", flush=True)
+                        except:
+                            pass
+                print("\nDownload complete.")
+
             elif "Browse Models ↗" in selected_name:
                 interpreter.display_message(
                     "Opening [ollama.com/library](ollama.com/library)."
@@ -303,6 +334,7 @@ def local_setup(interpreter, provider=None, model=None):
 
             # Set the model to the selected model
             interpreter.llm.model = f"ollama/{model}"
+            interpreter.llm.api_base = ollama_url
 
             # Send a ping, which will actually load the model
 
@@ -318,12 +350,13 @@ def local_setup(interpreter, provider=None, model=None):
 
             interpreter.display_message(f"> Model set to `{model}`")
 
-        # If Ollama is not installed or not recognized as a command, prompt the user to download Ollama and try again
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            print("Ollama is not installed or not recognized as a command.")
+        # If Ollama is not found or connection failed
+        except Exception as e:
+            print(f"Failed to connect to Ollama at {ollama_url}.")
+            print(f"Error: {e}")
             time.sleep(1)
             interpreter.display_message(
-                f"\nPlease visit [https://ollama.com/](https://ollama.com/) to download Ollama and try again.\n"
+                f"\nPlease ensure Ollama is running and accessible at {ollama_url}.\n"
             )
             time.sleep(2)
             sys.exit(1)
